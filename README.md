@@ -1,5 +1,5 @@
 # abap generate barcode
- SAP ABAP Generate Barcode 1D Using PHP-MySQL
+ SAP ABAP Generate Barcode 1D (128) Using PHP-MySQL
  
 ![alt text](https://github.com/jenizar/abap-generate-barcode/blob/master/Screenshot.PNG)
 
