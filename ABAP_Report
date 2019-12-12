@@ -1,0 +1,261 @@
+*&---------------------------------------------------------------------*
+*& Report  ZALV_OUT_BARCODE_JOHN
+*&
+*&---------------------------------------------------------------------*
+*& Purpose: Create Barcode
+*&
+*&---------------------------------------------------------------------*
+
+REPORT ZALV_OUT_BARCODE_JOHN NO STANDARD PAGE HEADING.
+TYPE-POOLS : slis.
+TABLES: ZBARCODE_PART.
+
+DATA : ls_barcode TYPE ZBARCODE_PART.
+DATA : it_barcode TYPE STANDARD TABLE OF ZBARCODE_PART.
+
+TYPES : BEGIN OF ty_header,
+          MATNR TYPE ZBARCODE_PART-MATNR,
+          MAKTX TYPE ZBARCODE_PART-MAKTX,
+          chbox,
+        END OF ty_header.
+DATA : gt_header TYPE ty_header OCCURS 0 WITH HEADER LINE.
+TYPES : BEGIN OF ty_header2,
+          MATNR TYPE ZBARCODE_PART-MATNR,
+          MAKTX TYPE ZBARCODE_PART-MAKTX,
+        END OF ty_header2.
+DATA : gs_header2 TYPE ty_header2.
+DATA : gt_header2 TYPE STANDARD TABLE OF ty_header2.
+**********************************************************************
+*DATA declaration for ALV
+**********************************************************************
+DATA: it_fieldcatalog TYPE lvc_t_fcat,
+      wa_fieldcatalog TYPE lvc_s_fcat,
+      g_tab_group TYPE slis_sp_group_alv,
+      g_layout   TYPE slis_layout_alv,
+      g_repid LIKE sy-repid,
+      w_layout TYPE lvc_s_layo,
+      g_stylerow TYPE lvc_s_styl,
+      g_t_ddval TYPE lvc_t_drop,
+      g_ddval TYPE lvc_s_drop,
+      g_events TYPE slis_t_event,
+      g_event TYPE slis_alv_event,
+      g_styletab TYPE TABLE OF lvc_s_styl.
+
+DATA : ok_code LIKE sy-ucomm,
+       save_ok LIKE sy-ucomm.
+
+DATA fcode TYPE TABLE OF sy-ucomm.
+DATA lv_quant TYPE P DECIMALS 0.
+
+  DATA lo_http_client TYPE REF TO if_http_client.
+  DATA:  lrf_descr TYPE REF TO cl_abap_typedescr,
+         lv_json TYPE string.
+  DATA lv_response TYPE string.
+  DATA : lv_payload TYPE string.
+
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(30) text-001 FOR FIELD s_mat.
+SELECT-OPTIONS s_mat FOR zbarcode_part-matnr NO INTERVALS.
+SELECTION-SCREEN END OF LINE.
+
+*----------------------------------------------------------------------*
+*       CLASS lcl_event_handlers DEFINITION
+*----------------------------------------------------------------------*
+CLASS lcl_event_handlers DEFINITION.
+  PUBLIC SECTION.
+    METHODS: handle_button_click FOR EVENT button_click OF cl_gui_alv_grid
+                                  IMPORTING es_col_id es_row_no.
+ENDCLASS.                    "lcl_event_handlers DEFINITION
+
+*----------------------------------------------------------------------*
+*       CLASS lcl_event_handlers IMPLEMENTATION
+*----------------------------------------------------------------------*
+CLASS lcl_event_handlers IMPLEMENTATION.
+  METHOD handle_button_click.
+   DATA: l_row(10),
+         l_str TYPE string.
+
+  ENDMETHOD.                    "handle_button_click
+ENDCLASS.                    "lcl_event_handlers IMPLEMENTATION
+
+START-OF-SELECTION.
+ PERFORM f_get_data.
+END-OF-SELECTION.
+
+PERFORM f_fieldcatalog.
+PERFORM build_layout.
+PERFORM create_event_exits.
+PERFORM fm_display_data.
+
+FORM f_get_data.
+  SELECT * FROM ZBARCODE_PART INTO TABLE it_barcode.
+  LOOP AT it_barcode INTO ls_barcode.
+    gt_header-matnr = ls_barcode-matnr.
+    gt_header-maktx = ls_barcode-maktx.
+     append gt_header.
+  ENDLOOP.
+ENDFORM.
+
+FORM f_fieldcatalog.
+  wa_fieldcatalog-col_pos = 1.
+  wa_fieldcatalog-fieldname = 'MATNR'.
+  wa_fieldcatalog-scrtext_l = 'Part Number'.
+  APPEND wa_fieldcatalog TO it_fieldcatalog.CLEAR wa_fieldcatalog.
+  wa_fieldcatalog-col_pos = 2.
+  wa_fieldcatalog-col_opt = 'X'.
+  wa_fieldcatalog-fieldname = 'MAKTX'.
+  wa_fieldcatalog-scrtext_l = 'Part Name'.
+  APPEND wa_fieldcatalog TO it_fieldcatalog.CLEAR wa_fieldcatalog.
+
+ENDFORM.
+
+FORM build_layout .
+  w_layout-stylefname = 'CELLSTYLE'.
+  w_layout-zebra      = 'X'.
+  w_layout-box_fname = 'CHBOX'.
+  w_layout-col_opt = 'X'.
+ENDFORM.
+
+FORM create_event_exits.
+  g_event-name = 'CALLER_EXIT'.
+  g_event-form = 'CALLER_EXIT'.
+  APPEND g_event TO g_events.
+ENDFORM.                    "create_event_exits
+
+*&---------------------------------------------------------------------*
+*&      Form  CALLER_EXIT
+*&---------------------------------------------------------------------*
+FORM caller_exit USING ls_data TYPE slis_data_caller_exit.
+  DATA: l_ref_alv TYPE REF TO cl_gui_alv_grid,
+        l_ref_handler TYPE REF TO lcl_event_handlers.
+  CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+    IMPORTING
+      e_grid = l_ref_alv.
+*  CALL METHOD l_ref_alv->set_drop_down_table
+*    EXPORTING
+*      it_drop_down = g_t_ddval.
+  CREATE OBJECT l_ref_handler.
+  SET HANDLER l_ref_handler->handle_button_click FOR l_ref_alv.
+ENDFORM.                   "CALLER_EXIT
+
+FORM fm_display_data.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY_LVC'
+    EXPORTING
+      i_callback_program       = sy-repid
+      is_layout_lvc            = w_layout
+      it_events                = g_events
+      i_callback_user_command  = 'USER_COMMAND'
+      i_callback_pf_status_set = 'FM_ALV_SET_PF_STATUS'
+      it_fieldcat_lvc          = it_fieldcatalog
+      I_GRID_TITLE             = 'Create Barcode'
+    TABLES
+      t_outtab                = gt_header[].
+
+ENDFORM.                    "fm_display_data
+
+FORM fm_alv_set_pf_status USING rt_extab TYPE slis_t_extab.
+
+  SET PF-STATUS 'ZSTANDARD'.
+
+ENDFORM.                    "fm_alv_set_pf_status
+
+*&---------------------------------------------------------------------*
+*&      Form  user_command
+*&---------------------------------------------------------------------*
+*       USER-COMMAND
+*----------------------------------------------------------------------*
+FORM user_command USING r_ucomm     LIKE sy-ucomm
+                        rs_selfield TYPE slis_selfield.
+
+  CASE r_ucomm.
+    WHEN '&IC1'.
+*      PERFORM fm_alv_event_double_click.
+
+    WHEN '&ETA'.
+*      PERFORM fm_alv_event_double_click.
+
+    WHEN '&F03' OR '&F15' OR '&F12'.
+      LEAVE TO SCREEN 0.
+
+    WHEN 'SEND'.             " change status --> "5"
+      PERFORM fm_save_data.
+
+  ENDCASE.
+
+   rs_selfield-refresh    = 'X'.
+   rs_selfield-col_stable = 'X'.
+   rs_selfield-row_stable = 'X'.
+
+ENDFORM.                    "FM_USER_COMMAND
+
+FORM fm_save_data.
+data : lv_status TYPE ZTB_GUIDMAP_9004-STATUS_ITEM.
+
+REFRESH it_barcode[].
+
+  LOOP AT gt_header WHERE chbox = 'X'.
+   ls_barcode-matnr = gt_header-matnr.
+   ls_barcode-maktx = gt_header-maktx.
+    append ls_barcode to it_barcode.
+   gs_header2-matnr = gt_header-matnr.
+   SHIFT gs_header2-matnr LEFT DELETING LEADING '0'.
+   gs_header2-maktx = gt_header-maktx.
+    append gs_header2 to gt_header2.
+  ENDLOOP.
+
+  DELETE ZBARCODE_PART FROM TABLE it_barcode.
+
+lv_payload = /ui2/cl_json=>serialize( data = gt_header2 compress = abap_true pretty_name = /ui2/cl_json=>pretty_mode-camel_case ).
+
+CALL METHOD cl_http_client=>create_by_url(
+     EXPORTING
+       url                = 'http://10.32.128.94/barcode1d/sapbarcode/postData.php'   "<hostname>:<port>/<path>
+     IMPORTING
+       client             = lo_http_client
+     EXCEPTIONS
+       argument_not_found = 1
+       plugin_not_active  = 2
+       internal_error     = 3
+       OTHERS             = 4 ).
+
+*** Call the following method to autheticate the user/password and client for the remote connection.
+CALL METHOD LO_HTTP_CLIENT->AUTHENTICATE(
+   EXPORTING
+     CLIENT = '020'
+     USERNAME = 'ABAP01'
+     PASSWORD = 'initial1'
+     LANGUAGE = ''
+     ).
+* Convert that payload to xstring.
+
+  DATA : lv_payload_x TYPE xstring.
+
+  CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+    EXPORTING
+      text          = lv_payload
+   IMPORTING
+     buffer        = lv_payload_x.
+
+* My logic originally used PUT, but you should be able to change to POST
+  lo_http_client->request->set_method( 'POST' ).
+  lo_http_client->request->set_content_type( 'application/json' ).
+  lo_http_client->request->set_data( lv_payload_x ).
+
+* Sending the request
+  lo_http_client->send(
+      EXCEPTIONS
+        http_communication_failure = 1
+        http_invalid_state        = 2 ).
+
+* Receiving the response
+  lo_http_client->receive(
+    EXCEPTIONS
+      http_communication_failure = 1
+      http_invalid_state        = 2
+      http_processing_failed    = 3 ).
+
+* Check the response. Hopefully you get back a JSON response.
+  DATA lv_response TYPE string.
+  lv_response = lo_http_client->response->get_cdata( ).
+ENDFORM.
